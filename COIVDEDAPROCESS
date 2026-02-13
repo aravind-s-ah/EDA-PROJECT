@@ -1,0 +1,160 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import requests
+import os
+
+url = "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/latest/owid-covid-latest.csv"
+file_path = "/content/sample_data/covid_19_clean_complete.csv" # Using the uploaded CSV file
+if not os.path.exists(file_path):
+    print(f"Downloading data from {url}...")
+    !wget -q $url -O $file_path
+    if os.path.exists(file_path):
+        print("Download complete.")
+    else:
+        print("Download failed. Please check the URL or your connection.")
+else:
+    print("File already exists, skipping download.")
+
+df = pd.read_csv(file_path)
+
+# Adjust renaming for the 'covid_19_clean_complete.csv' (JHU) dataset
+df.rename(columns={'Country/Region': 'Country'}, inplace=True)
+
+# Convert 'Date' column to datetime for proper sorting
+df['Date'] = pd.to_datetime(df['Date'])
+
+# Get the latest data for each country from the time-series dataset
+# This assumes 'Confirmed', 'Deaths', 'Recovered' are cumulative values on the last date
+latest_df = df.sort_values(by=['Country', 'Date']).drop_duplicates(subset=['Country'], keep='last')
+
+# Remove filtering based on 'iso_code' as it's not present in this dataset
+# latest_df = latest_df[~latest_df['iso_code'].isin(['OWID_WRL', 'OWID_EUR', 'OWID_INT', 'OWID_ASI', 'OWID_AFR', 'OWID_OCE', 'OWID_NAM', 'OWID_SAM'])]
+
+# Filter out 'World' if it exists as a country entry
+latest_df = latest_df[latest_df['Country'] != 'World']
+latest_df.fillna(0, inplace=True)
+
+print("DataFrame columns after loading and renaming (latest data):", latest_df.columns.tolist())
+
+# GRAPH 1: Top 10 Countries by Confirmed Cases
+top_confirmed = latest_df.sort_values(by='Confirmed', ascending=False).head(10)
+
+plt.figure(figsize=(6, 4))
+plt.barh(top_confirmed['Country'], top_confirmed['Confirmed'], color='skyblue')
+plt.xlabel("Confirmed Cases")
+plt.ylabel("Country")
+plt.title("Top 10 Countries by Confirmed COVID-19 Cases")
+plt.gca().invert_yaxis()
+plt.tight_layout()
+plt.show()
+
+# GRAPH 2: Top 10 Countries by Deaths
+top_deaths = latest_df.sort_values(by='Deaths', ascending=False).head(10)
+
+plt.figure(figsize=(6, 4))
+plt.barh(top_deaths['Country'], top_deaths['Deaths'], color='salmon')
+plt.xlabel("Deaths")
+plt.ylabel("Country")
+plt.title("Top 10 Countries by COVID-19 Deaths")
+plt.gca().invert_yaxis()
+plt.tight_layout()
+plt.show()
+
+# GRAPH 3: Top 10 Countries by Recovered Cases (RE-ADDED)
+if 'Recovered' in latest_df.columns:
+    print("Plotting 'Recovered Cases' data.")
+    top_recovered = latest_df.sort_values(by='Recovered', ascending=False).head(10)
+
+    plt.figure(figsize=(6, 4))
+    plt.barh(top_recovered['Country'], top_recovered['Recovered'], color='lightgreen')
+    plt.xlabel("Recovered Cases")
+    plt.ylabel("Country")
+    plt.title("Top 10 Countries by COVID-19 Recovered Cases")
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.show()
+else:
+    print("Note: 'Recovered Cases' data is not available in the current dataset after processing, skipping related plots.")
+
+# GRAPH X: Top 10 Countries by Active Cases (NEWLY ADDED)
+if 'Active' in latest_df.columns:
+    print("Plotting 'Active Cases' data.")
+    top_active = latest_df.sort_values(by='Active', ascending=False).head(10)
+
+    plt.figure(figsize=(6, 4))
+    plt.barh(top_active['Country'], top_active['Active'], color='purple')
+    plt.xlabel("Active Cases")
+    plt.ylabel("Country")
+    plt.title("Top 10 Countries by COVID-19 Active Cases")
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.show()
+else:
+    print("Note: 'Active Cases' data is not available in the current dataset after processing, skipping related plots.")
+
+# GRAPH 4: Confirmed vs Deaths (Scatter Plot)
+plt.figure(figsize=(7, 5))
+sns.scatterplot(x='Confirmed', y='Deaths', data=latest_df, hue='Country', size='Confirmed', sizes=(20, 400), legend=False) # Used seaborn for better scatter plot
+plt.title("Confirmed Cases vs Deaths")
+plt.xlabel("Confirmed Cases")
+plt.ylabel("Deaths")
+plt.grid(True, linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.show()
+
+# GRAPH 6: Mortality Rate by Country (Top 10)
+# Ensure 'Confirmed' is not zero to avoid division by zero
+latest_df['Mortality Rate (%)'] = (latest_df['Deaths'] / latest_df['Confirmed'].replace(0, pd.NA)).fillna(0) * 100
+latest_df.replace([float('inf'), -float('inf')], 0, inplace=True)
+
+top_mortality = latest_df.sort_values(by='Mortality Rate (%)', ascending=False).head(10)
+
+plt.figure(figsize=(6, 4))
+plt.barh(top_mortality['Country'], top_mortality['Mortality Rate (%)'], color='lightcoral')
+plt.xlabel("Mortality Rate (%)")
+plt.ylabel("Country")
+plt.title("Top 10 Countries by Mortality Rate (%)")
+plt.gca().invert_yaxis()
+plt.tight_layout()
+plt.show()
+
+# GRAPH 8: Correlation Heatmap
+cols_for_corr = ['Confirmed', 'Deaths']
+if 'Recovered' in latest_df.columns:
+    cols_for_corr.append('Recovered')
+if 'Active' in latest_df.columns: # ADDED Active to correlation heatmap
+    cols_for_corr.append('Active')
+
+plt.figure(figsize=(5, 4))
+sns.heatmap(
+    latest_df[cols_for_corr].corr(),
+    annot=True,
+    cmap='coolwarm',
+    fmt=".2f"
+)
+plt.title("Correlation Between COVID-19 Metrics")
+plt.tight_layout()
+plt.show()
+
+# GRAPH 9: Global Case Distribution (Pie Chart)
+labels = ['Confirmed', 'Deaths']
+values = [
+    latest_df['Confirmed'].sum(),
+    latest_df['Deaths'].sum()
+]
+if 'Recovered' in latest_df.columns:
+    labels.append('Recovered')
+    values.append(latest_df['Recovered'].sum())
+if 'Active' in latest_df.columns: # ADDED Active to pie chart
+    labels.append('Active')
+    values.append(latest_df['Active'].sum())
+
+plt.figure(figsize=(5, 5))
+plt.pie(values, labels=labels, autopct='%1.1f%%', startangle=90, colors=['gold', 'lightcoral', 'lightgreen', 'purple']) # Added 'purple' for Active
+plt.title("Global COVID-19 Case Distribution")
+plt.axis('equal')
+plt.tight_layout()
+plt.show()
+
+print("COVID-19 DATA VISUALIZATION COMPLETED SUCCESSFULLY ✅")
